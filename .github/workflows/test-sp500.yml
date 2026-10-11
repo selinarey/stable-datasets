@@ -27,4 +27,4 @@ jobs:
 
       - name: Run SP500 test
         run: |
-          python -m pytest tests/test_sp500.py -v
+          python -m pytest stable_datasets/tests/test_sp500.py -v
