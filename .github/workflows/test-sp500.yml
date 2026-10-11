@@ -25,6 +25,5 @@ jobs:
           pip install -e .
           pip install pytest numpy pandas kagglehub
 
-      - name: Run SP500 test
-        run: |
-          python -m pytest stable_datasets/tests/test_sp500.py -v
+      - name: Test financial datasets
+        run: python -m pytest stable_datasets/tests/test_sp500.py stable_datasets/tests/test_forex.py -v
