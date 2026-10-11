@@ -120,32 +120,43 @@ class SP500(BaseDatasetBuilder):
             Split.TEST,
         ]
 
+    
     def _generate_examples(self, data_path, split):
-        """Generate 30-day financial sequences."""
+        """Generate 30-day sequences using common chronological splits."""
 
         df = pd.read_csv(data_path, parse_dates=["date"])
         df = df.sort_values(["Name", "date"])
 
+        # Establish shared date boundaries across all stocks.
+        unique_dates = np.sort(df["date"].dropna().unique())
+
+        train_end = int(len(unique_dates) * 0.70)
+        val_end = int(len(unique_dates) * 0.85)
+
+        if split == Split.TRAIN:
+            allowed_dates = unique_dates[:train_end]
+        elif split == Split.VALIDATION:
+            allowed_dates = unique_dates[train_end:val_end]
+        elif split == Split.TEST:
+            allowed_dates = unique_dates[val_end:]
+        else:
+            raise ValueError(f"Unknown split: {split}")
+
+        if len(allowed_dates) == 0:
+            return
+
+        start_date = allowed_dates[0]
+        end_date = allowed_dates[-1]
+
+        subset = df[
+            (df["date"] >= start_date)
+            & (df["date"] <= end_date)
+        ]
+
         example_id = 0
 
-        for _, stock_data in df.groupby("Name"):
-            stock_data = stock_data.reset_index(drop=True)
-
-            # Split each stock chronologically.
-            n = len(stock_data)
-            train_end = int(n * 0.70)
-            val_end = int(n * 0.85)
-
-            if split == Split.TRAIN:
-                subset = stock_data.iloc[:train_end]
-            elif split == Split.VALIDATION:
-                subset = stock_data.iloc[train_end:val_end]
-            elif split == Split.TEST:
-                subset = stock_data.iloc[val_end:]
-            else:
-                raise ValueError(f"Unknown split: {split}")
-
-            windows = make_windows(subset)
+        for _, stock_data in subset.groupby("Name"):
+            windows = make_windows(stock_data)
 
             for window in windows:
                 yield example_id, {"series": window}
