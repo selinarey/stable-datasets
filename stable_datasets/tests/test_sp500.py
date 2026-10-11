@@ -2,6 +2,7 @@ import numpy as np
 
 from stable_datasets.timeseries.SP500 import make_windows
 from stable_datasets.timeseries.SP500 import SP500
+from stable_datasets.splits import Split
 
 
 def test_make_windows():
@@ -54,10 +55,10 @@ def test_sp500_generate_examples(tmp_path):
     df.to_csv(csv_path, index=False)
 
     # Bypass the downloader to test example generation directly.
-    builder = SP500.__new__(SP500)
+    builder = object.__new__(SP500)
 
     train_examples = list(
-        builder._generate_examples(csv_path, "train")
+        builder._generate_examples(csv_path, Split.TRAIN)
     )
 
     assert len(train_examples) > 0
