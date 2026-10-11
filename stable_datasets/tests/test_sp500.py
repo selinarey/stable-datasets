@@ -1,6 +1,7 @@
 import numpy as np
 
 from stable_datasets.timeseries.SP500 import make_windows
+from stable_datasets.timeseries.SP500 import SP500
 
 
 def test_make_windows():
@@ -30,3 +31,37 @@ def test_make_windows():
 
     # No missing or infinite values.
     assert np.isfinite(windows[0]).all()
+
+
+
+
+
+def test_sp500_generate_examples(tmp_path):
+    import pandas as pd
+
+    # Create 120 days of synthetic stock data.
+    df = pd.DataFrame({
+        "date": pd.date_range("2020-01-01", periods=120),
+        "open": range(100, 220),
+        "high": range(101, 221),
+        "low": range(99, 219),
+        "close": range(100, 220),
+        "volume": [1000] * 120,
+        "Name": ["AAPL"] * 120,
+    })
+
+    csv_path = tmp_path / "stocks.csv"
+    df.to_csv(csv_path, index=False)
+
+    # Bypass the downloader to test example generation directly.
+    builder = SP500.__new__(SP500)
+
+    train_examples = list(
+        builder._generate_examples(csv_path, "train")
+    )
+
+    assert len(train_examples) > 0
+
+    for _, example in train_examples:
+        assert example["series"].shape == (30, 5)
+        assert np.isfinite(example["series"]).all()
