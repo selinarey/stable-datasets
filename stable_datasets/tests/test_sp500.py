@@ -66,3 +66,38 @@ def test_sp500_generate_examples(tmp_path):
     for _, example in train_examples:
         assert example["series"].shape == (30, 5)
         assert np.isfinite(example["series"]).all()
+
+
+
+
+
+def test_sp500_chronological_splits(tmp_path):
+    import numpy as np
+    import pandas as pd
+
+    dates = pd.date_range("2020-01-01", periods=120)
+
+    df = pd.DataFrame({
+        "date": list(dates) * 2,
+        "open": list(range(100, 220)) * 2,
+        "high": list(range(101, 221)) * 2,
+        "low": list(range(99, 219)) * 2,
+        "close": list(range(100, 220)) * 2,
+        "volume": [1000] * 240,
+        "Name": ["AAPL"] * 120 + ["MSFT"] * 120,
+    })
+
+    csv_path = tmp_path / "stocks.csv"
+    df.to_csv(csv_path, index=False)
+
+    builder = object.__new__(SP500)
+
+    for split in (Split.TRAIN, Split.VALIDATION, Split.TEST):
+        examples = list(builder._generate_examples(csv_path, split))
+
+        assert len(examples) > 0
+
+        for _, example in examples:
+            series = np.asarray(example["series"])
+            assert series.shape == (30, 5)
+            assert np.isfinite(series).all()
