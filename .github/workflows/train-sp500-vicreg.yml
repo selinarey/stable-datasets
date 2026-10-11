@@ -2,6 +2,9 @@
 name: Train SP500 VICReg
 
 on:
+  push:
+    branches:
+      - add-financial-timeseries-datasets
   workflow_dispatch:
 
 jobs:
