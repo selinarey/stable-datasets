@@ -71,20 +71,22 @@ def test_sp500_generate_examples(tmp_path):
 
 
 
+
 def test_sp500_chronological_splits(tmp_path):
     import numpy as np
     import pandas as pd
 
-    dates = pd.date_range("2020-01-01", periods=120)
+    # Use enough dates for 30-day windows in every split.
+    dates = pd.date_range("2020-01-01", periods=300)
 
     df = pd.DataFrame({
         "date": list(dates) * 2,
-        "open": list(range(100, 220)) * 2,
-        "high": list(range(101, 221)) * 2,
-        "low": list(range(99, 219)) * 2,
-        "close": list(range(100, 220)) * 2,
-        "volume": [1000] * 240,
-        "Name": ["AAPL"] * 120 + ["MSFT"] * 120,
+        "open": list(range(100, 400)) * 2,
+        "high": list(range(101, 401)) * 2,
+        "low": list(range(99, 399)) * 2,
+        "close": list(range(100, 400)) * 2,
+        "volume": [1000] * 600,
+        "Name": ["AAPL"] * 300 + ["MSFT"] * 300,
     })
 
     csv_path = tmp_path / "stocks.csv"
