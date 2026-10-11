@@ -1,5 +1,8 @@
 import numpy as np
 import pandas as pd
+from pathlib import Path
+import kagglehub
+
 from stable_datasets.schema import (
     DatasetInfo,
     DatasetSource,
@@ -79,31 +82,40 @@ class SP500(BaseDatasetBuilder):
         )
 
     def _split_generators(self):
-        """Locate the locally downloaded CSV file."""
+    """Download the S&P 500 dataset and define chronological splits."""
 
-        data_path = self._raw_download_dir / "all_stocks_5yr.csv"
+    dataset_dir = Path(
+        kagglehub.dataset_download("camnugent/sandp500")
+    )
 
-        if not data_path.exists():
-            raise FileNotFoundError(
-                f"CSV file not found: {data_path}. "
-                "Download all_stocks_5yr.csv from Kaggle "
-                "and place it in the download directory."
-            )
+    data_path = dataset_dir / "all_stocks_5yr.csv"
 
-        return [
-            SplitGenerator(
-                name=split,
-                gen_kwargs={
-                    "data_path": data_path,
-                    "split": split,
-                },
-            )
-            for split in (Split.TRAIN, Split.VALIDATION, Split.TEST)
-        ]
+    if not data_path.is_file():
+        raise FileNotFoundError(
+            f"Could not find all_stocks_5yr.csv in {dataset_dir}"
+        )
 
+    return [
+        SplitGenerator(
+            name=split,
+            gen_kwargs={
+                "data_path": data_path,
+                "split": split,
+            },
+        )
+        for split in (Split.TRAIN, Split.VALIDATION, Split.TEST)
+    ]
+
+    
+    
+    
     def _candidate_splits(self):
         return [Split.TRAIN, Split.VALIDATION, Split.TEST]
 
+    
+    
+    
+    
     def _generate_examples(self, data_path, split):
         """Generate 30-day financial sequences."""
 
