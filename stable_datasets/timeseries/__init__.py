@@ -19,6 +19,7 @@ from .vocalset import VocalSet
 from .VoiceGenderDetection import VoiceGenderDetection
 from .warblr import Warblr
 from .SP500 import SP500
+from .Forex import Forex
 
 
 __all__ = [
