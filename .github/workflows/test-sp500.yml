@@ -27,3 +27,23 @@ jobs:
 
       - name: Test financial datasets
         run: python -m pytest stable_datasets/tests/test_sp500.py stable_datasets/tests/test_forex.py -v
+
+      - name: Test real Forex dataset download
+        run: |
+          python - <<'PY'
+          import numpy as np
+          from stable_datasets.timeseries import Forex
+      
+          for split in ["train", "validation", "test"]:
+              dataset = Forex(split=split).with_format("numpy")
+      
+              print(f"{split}: {len(dataset)} windows")
+      
+              assert len(dataset) > 0, f"Empty {split} split"
+      
+              example = dataset[0]["series"]
+              assert example.shape == (30, 4)
+              assert np.isfinite(example).all()
+      
+          print("Real Forex dataset loaded successfully!")
+          PY
