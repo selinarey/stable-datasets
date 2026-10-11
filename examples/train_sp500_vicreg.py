@@ -104,11 +104,10 @@ def extract_probe_data(encoder, loader):
             # Simple baseline statistics from the input.
             features = torch.stack([
                 log_returns.mean(dim=1),
-                log_returns.std(dim=1, unbiased=True),
                 log_returns.abs().mean(dim=1),
-                x[:, :, 1].mean(dim=1),  # mean normalized high
-                x[:, :, 2].mean(dim=1),  # mean normalized low
-                x[:, :, 4].mean(dim=1),  # scaled log-volume
+                x[:, :, 1].mean(dim=1),
+                x[:, :, 2].mean(dim=1),
+                x[:, :, 4].mean(dim=1),
             ], dim=1)
 
             all_z.append(encoder(x).cpu().numpy())
@@ -166,7 +165,7 @@ def main():
 
     print("=== VICReg pretraining ===")
 
-    for epoch in range(3):
+    for epoch in range(10):
         model.train()
         losses = []
 
