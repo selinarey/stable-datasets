@@ -41,7 +41,7 @@ jobs:
       
               assert len(dataset) > 0, f"Empty {split} split"
       
-              example = dataset[0]["series"]
+              example = np.asarray(dataset[0]["series"], dtype=np.float32)
               assert example.shape == (30, 4)
               assert np.isfinite(example).all()
       
