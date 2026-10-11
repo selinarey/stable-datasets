@@ -1,24 +1,31 @@
 
-"""Small VICReg experiment on the SP500 time-series dataset."""
+"""Train VICReg on SP500 and evaluate representations with a linear probe."""
+
+from copy import deepcopy
 
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
 from stable_datasets.timeseries import SP500
 from stable_pretraining.methods.vicreg import VICReg
 
 
 torch.manual_seed(42)
+np.random.seed(42)
 torch.set_num_threads(2)
 
 
 class FinancialDataset(Dataset):
     def __init__(self, split, limit):
-        source = SP500(split=split).with_format("numpy")
-        self.source = source
-        self.length = min(limit, len(source))
+        self.source = SP500(split=split).with_format("numpy")
+        self.length = min(limit, len(self.source))
 
     def __len__(self):
         return self.length
@@ -28,15 +35,13 @@ class FinancialDataset(Dataset):
             self.source[index]["series"], dtype=np.float32
         ).copy()
 
-        # Scale log-volume to a range comparable to price returns.
+        # Match the scaling used in our original VICReg experiment.
         series[:, 4] /= 20.0
 
         return torch.from_numpy(series)
 
 
 class TimeSeriesEncoder(nn.Module):
-    """Simple encoder compatible with the VICReg implementation."""
-
     def __init__(self):
         super().__init__()
         self.network = nn.Sequential(
@@ -47,8 +52,7 @@ class TimeSeriesEncoder(nn.Module):
         )
 
     def forward(self, x):
-        # VICReg probes its encoder with a dummy 224x224 image.
-        # Convert that initialization probe into a 30x5 input.
+        # Accommodate the image-shaped initialization probe.
         if x.ndim == 4 and x.shape == (1, 3, 224, 224):
             x = x.new_zeros((1, 30, 5))
 
@@ -56,12 +60,10 @@ class TimeSeriesEncoder(nn.Module):
 
 
 def augment(x):
-    """Create a slightly perturbed view of each financial sequence."""
-    noise = torch.randn_like(x) * 0.005
-    return x + noise
+    return x + torch.randn_like(x) * 0.005
 
 
-def evaluate(model, loader):
+def evaluate_ssl(model, loader):
     model.eval()
     losses = []
     embeddings = []
@@ -70,23 +72,77 @@ def evaluate(model, loader):
         for x in loader:
             output = model(augment(x), augment(x))
             losses.append(output.loss.item())
+            embeddings.append(model(x).embedding)
 
-            features = model(x).embedding
-            embeddings.append(features)
+    z = torch.cat(embeddings, dim=0)
 
-    embeddings = torch.cat(embeddings, dim=0)
+    return float(np.mean(losses)), z.std(dim=0).mean().item()
+
+
+def extract_probe_data(encoder, loader):
+    """Extract embeddings, financial features, and realized volatility."""
+    encoder.eval()
+
+    all_z = []
+    all_features = []
+    all_targets = []
+
+    with torch.no_grad():
+        for x in loader:
+            # Close prices were normalized relative to the
+            # first close: normalized_close = close / close_0 - 1.
+            close = 1.0 + x[:, :, 3]
+
+            # Daily log returns within each 30-day window.
+            log_returns = torch.log(
+                close[:, 1:] / close[:, :-1]
+            )
+
+            # Target: realized volatility of the same window.
+            volatility = log_returns.std(dim=1, unbiased=True)
+
+            # Simple baseline statistics from the input.
+            features = torch.stack([
+                log_returns.mean(dim=1),
+                log_returns.std(dim=1, unbiased=True),
+                log_returns.abs().mean(dim=1),
+                x[:, :, 1].mean(dim=1),  # mean normalized high
+                x[:, :, 2].mean(dim=1),  # mean normalized low
+                x[:, :, 4].mean(dim=1),  # scaled log-volume
+            ], dim=1)
+
+            all_z.append(encoder(x).cpu().numpy())
+            all_features.append(features.cpu().numpy())
+            all_targets.append(volatility.cpu().numpy())
 
     return (
-        float(np.mean(losses)),
-        embeddings.std(dim=0).mean().item(),
+        np.concatenate(all_z),
+        np.concatenate(all_features),
+        np.concatenate(all_targets),
     )
+
+
+def run_probe(name, x_train, y_train, x_test, y_test):
+    """Fit Ridge regression and evaluate on held-out test data."""
+    regressor = make_pipeline(
+        StandardScaler(),
+        Ridge(alpha=1.0),
+    )
+
+    regressor.fit(x_train, y_train)
+    predictions = regressor.predict(x_test)
+
+    mse = mean_squared_error(y_test, predictions)
+    r2 = r2_score(y_test, predictions)
+
+    print(f"{name}: MSE={mse:.8f}, R2={r2:.4f}")
 
 
 def main():
     train_loader = DataLoader(
         FinancialDataset("train", 2048),
         batch_size=64,
-        shuffle=True,
+        shuffle=False,
     )
     val_loader = DataLoader(
         FinancialDataset("validation", 512),
@@ -97,42 +153,86 @@ def main():
         batch_size=64,
     )
 
+    # Both encoders start with identical random weights.
+    encoder = TimeSeriesEncoder()
+    random_encoder = deepcopy(encoder)
+
     model = VICReg(
-        encoder_name=TimeSeriesEncoder(),
+        encoder_name=encoder,
         projector_dims=(128, 128, 64),
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+    print("=== VICReg pretraining ===")
+
     for epoch in range(3):
         model.train()
-        train_losses = []
+        losses = []
 
         for x in train_loader:
             optimizer.zero_grad()
+
             output = model(augment(x), augment(x))
             loss = output.loss
 
             if not torch.isfinite(loss):
-                raise RuntimeError("Non-finite training loss")
+                raise RuntimeError("Non-finite VICReg loss")
 
             loss.backward()
             optimizer.step()
-            train_losses.append(loss.item())
+            losses.append(loss.item())
 
-        val_loss, val_std = evaluate(model, val_loader)
+        val_loss, val_std = evaluate_ssl(model, val_loader)
 
         print(
             f"Epoch {epoch + 1}: "
-            f"train_loss={np.mean(train_losses):.4f}, "
+            f"train_loss={np.mean(losses):.4f}, "
             f"val_loss={val_loss:.4f}, "
             f"val_embedding_std={val_std:.4f}"
         )
 
-    test_loss, test_std = evaluate(model, test_loader)
+    test_loss, test_std = evaluate_ssl(model, test_loader)
 
     print(f"Final test VICReg loss: {test_loss:.4f}")
     print(f"Final test embedding std: {test_std:.4f}")
+
+    print("\n=== Linear probe evaluation ===")
+
+    # Extract features from the trained encoder.
+    z_train, basic_train, y_train = extract_probe_data(
+        encoder, train_loader
+    )
+    z_test, basic_test, y_test = extract_probe_data(
+        encoder, test_loader
+    )
+
+    # Extract features from the untrained encoder.
+    random_train, _, _ = extract_probe_data(
+        random_encoder, train_loader
+    )
+    random_test, _, _ = extract_probe_data(
+        random_encoder, test_loader
+    )
+
+    run_probe(
+        "Trained VICReg",
+        z_train, y_train, z_test, y_test
+    )
+
+    run_probe(
+        "Random encoder",
+        random_train, y_train, random_test, y_test
+    )
+
+    run_probe(
+        "Simple financial features",
+        basic_train, y_train, basic_test, y_test
+    )
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
