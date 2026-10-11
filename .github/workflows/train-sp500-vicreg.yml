@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install numpy pandas kagglehub
+          pip install numpy pandas kagglehub scikit-learn
           pip install git+https://github.com/galilai-group/stable-pretraining.git
 
       - name: Train and evaluate VICReg
