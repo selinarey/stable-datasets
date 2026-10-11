@@ -1,7 +1,9 @@
+
+from pathlib import Path
+
+import kagglehub
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import kagglehub
 
 from stable_datasets.schema import (
     DatasetInfo,
@@ -16,7 +18,6 @@ from stable_datasets.splits import Split, SplitGenerator
 
 
 SEQUENCE_LENGTH = 30
-
 PRICE_COLUMNS = ["open", "high", "low", "close"]
 
 
@@ -82,45 +83,47 @@ class SP500(BaseDatasetBuilder):
         )
 
     def _split_generators(self):
-    """Download the S&P 500 dataset and define chronological splits."""
+        """Download the S&P 500 dataset and define chronological splits."""
 
-    dataset_dir = Path(
-        kagglehub.dataset_download("camnugent/sandp500")
-    )
-
-    data_path = dataset_dir / "all_stocks_5yr.csv"
-
-    if not data_path.is_file():
-        raise FileNotFoundError(
-            f"Could not find all_stocks_5yr.csv in {dataset_dir}"
+        dataset_dir = Path(
+            kagglehub.dataset_download("camnugent/sandp500")
         )
 
-    return [
-        SplitGenerator(
-            name=split,
-            gen_kwargs={
-                "data_path": data_path,
-                "split": split,
-            },
-        )
-        for split in (Split.TRAIN, Split.VALIDATION, Split.TEST)
-    ]
+        data_path = dataset_dir / "all_stocks_5yr.csv"
 
-    
-    
-    
+        if not data_path.is_file():
+            raise FileNotFoundError(
+                f"Could not find all_stocks_5yr.csv in {dataset_dir}"
+            )
+
+        return [
+            SplitGenerator(
+                name=split,
+                gen_kwargs={
+                    "data_path": data_path,
+                    "split": split,
+                },
+            )
+            for split in (
+                Split.TRAIN,
+                Split.VALIDATION,
+                Split.TEST,
+            )
+        ]
+
     def _candidate_splits(self):
-        return [Split.TRAIN, Split.VALIDATION, Split.TEST]
+        """Return the available dataset splits."""
 
-    
-    
-    
-    
+        return [
+            Split.TRAIN,
+            Split.VALIDATION,
+            Split.TEST,
+        ]
+
     def _generate_examples(self, data_path, split):
         """Generate 30-day financial sequences."""
 
         df = pd.read_csv(data_path, parse_dates=["date"])
-
         df = df.sort_values(["Name", "date"])
 
         example_id = 0
@@ -128,7 +131,7 @@ class SP500(BaseDatasetBuilder):
         for _, stock_data in df.groupby("Name"):
             stock_data = stock_data.reset_index(drop=True)
 
-            # Chronological split for each stock
+            # Split each stock chronologically.
             n = len(stock_data)
             train_end = int(n * 0.70)
             val_end = int(n * 0.85)
